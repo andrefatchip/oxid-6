@@ -131,6 +131,27 @@ class fcPayOnePayment extends fcPayOnePayment_parent
     }
 
     /**
+     * Method determines iff payment is of type
+     * klarna (currently invoice and installment)
+     *
+     * @param void
+     * @return bool
+     */
+    public function fcpoIsKlarnaType()
+    {
+        $sPaymentId = $this->getId();
+
+        $aValidPaymentIds = array(
+            'fcpoklarna_invoice',
+            'fcpoklarna_installment',
+        );
+
+        $blValid = in_array($sPaymentId, $aValidPaymentIds);
+
+        return $blValid;
+    }
+
+    /**
      * Determines the operation mode ( live or test ) used in this order based on the payment (sub) method
      *
      * @param string $sType payment subtype ( Visa, MC, etc.). Default is ''

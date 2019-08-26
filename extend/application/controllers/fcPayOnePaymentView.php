@@ -1272,8 +1272,6 @@ class fcPayOnePaymentView extends fcPayOnePaymentView_parent
         }
 
         if ($mReturn == 'order') { // success
-            $this->_fcpoSetKlarnaCampaigns();
-
             $oPayment = $this->_oFcpoHelper->getFactoryObject('oxpayment');
             $oPayment->load($sPaymentId);
             $mReturn = $this->_fcpoSecInvoiceSaveRequestedValues($mReturn, $sPaymentId);
@@ -1289,11 +1287,41 @@ class fcPayOnePaymentView extends fcPayOnePaymentView_parent
             $this->_fcCleanupSessionFragments($oPayment);
 
             $mReturn = $this->_fcpoPayolutionPreCheck($mReturn, $sPaymentId);
+            $mReturn = $this->_fcpoStartKlarnaSession($mReturn, $oPayment);
             if ($sPaymentId == 'fcporp_bill') {
                 $mReturn = $this->_fcpoCheckRatePayBillMandatoryUserData($mReturn, $sPaymentId);
             }
             $mReturn = $this->_fcpoAdultCheck($mReturn, $sPaymentId);
         }
+
+        return $mReturn;
+    }
+
+    /**
+     * Checking if payment is of type klarna
+     *
+     * @param $mReturn
+     * @param $oPayment
+     */
+    protected function _fcpoStartKlarnaSession($mReturn, $oPayment)
+    {
+        $blIsKlarna = $oPayment->fcpoIsKlarnaType();
+        if (!$blIsKlarna) return $mReturn;
+
+        $oSession = $this->_oFcpoHelper->fcpoGetSession();
+        $oBasket = $oSession->getBasket();
+        $oUser = $this->getUser();
+        $oPORequest = $this->_oFcpoHelper->getFactoryObject('fcporequest');
+
+        $aResponse =
+            $oPORequest->sendRequestKlarnaStartSession($oPayment, $oUser, $oBasket);
+
+        if ($aResponse['status'] == 'ERROR') {
+            $this->_oFcpoHelper->fcpoSetSessionVariable('payerror', -20);
+            return false;
+        }
+
+
 
         return $mReturn;
     }
@@ -2644,21 +2672,6 @@ class fcPayOnePaymentView extends fcPayOnePaymentView_parent
         }
 
         return $blApproval;
-    }
-
-    /**
-     * Sets needed session values if there is corresponding data
-     * 
-     * @param  void
-     * @return void
-     */
-    protected function _fcpoSetKlarnaCampaigns() 
-    {
-        if ($this->_oFcpoHelper->fcpoGetRequestParameter('fcpo_klarna_campaign')) {
-            $this->_oFcpoHelper->fcpoSetSessionVariable('fcpo_klarna_campaign', $this->_oFcpoHelper->fcpoGetRequestParameter('fcpo_klarna_campaign'));
-        } else {
-            $this->_oFcpoHelper->fcpoDeleteSessionVariable('fcpo_klarna_campaign');
-        }
     }
 
     /**
