@@ -137,6 +137,11 @@ class fcpoRequest extends oxSuperCfg
     );
 
     /**
+     * @var null
+     */
+    protected $_oDelAddress = null;
+
+    /**
      * Class constructor, sets all required parameters for requests.
      */
     public function __construct() 
@@ -413,8 +418,6 @@ class fcpoRequest extends oxSuperCfg
      */
     protected function _setPaymentParamsKlarna() 
     {
-        $this->addParameter('clearingtype', 'fnc'); //Payment method
-        $this->addParameter('financingtype', 'KLS');
         $sCampaign = $this->_oFcpoHelper->fcpoGetSessionVariable('fcpo_klarna_campaign');
         if ($sCampaign) {
             $this->addParameter('add_paydata[klsid]', $sCampaign);
@@ -1091,14 +1094,27 @@ class fcpoRequest extends oxSuperCfg
         $this->addParameter('shipping_city', $sShippingCity);
         $this->addParameter('shipping_country', strtoupper($sShippingCountry));
 
-        // basket handling
+        $this->_fcpoAddSessionBasket();
+
+        return false;
+    }
+
+    /**
+     * Adds basket information to current request
+     *
+     * @param void
+     * @return void
+     */
+    protected function _fcpoAddSessionBasket()
+    {
+        $oSession = $this->_oFcpoHelper->fcpoGetSession();
         $oBasket = $oSession->getBasket();
         $iIndex = 1;
         /** @var oxbasketitem $oBasketItem */
         foreach ($oBasket->getContents() as $oBasketItem) {
             $oArticle = $oBasketItem->getArticle();
             $sArticleIdent = ($oArticle->oxarticles__oxean->value) ? $oArticle->oxarticles__oxean->value : $oArticle->oxarticles__oxartnum->value;
-                
+
             $this->addParameter('it[' . (string) $iIndex . ']', 'goods');
             $this->addParameter('id[' . (string) $iIndex . ']', $sArticleIdent);
             $this->addParameter('pr[' . (string) $iIndex . ']', $this->_fcpoGetCentPrice($oBasketItem));
@@ -1116,7 +1132,6 @@ class fcpoRequest extends oxSuperCfg
         $this->addParameter('no[' . (string) $iIndex . ']', '1');
         $this->addParameter('de[' . (string) $iIndex . ']', 'Standard Versand');
 
-        return false;
     }
 
     /**
@@ -1709,6 +1724,63 @@ class fcpoRequest extends oxSuperCfg
     }
 
     /**
+     * Str
+     *
+     * @param $oPayment
+     * @param $oUser
+     * @param $oBasket
+     */
+    public function sendRequestKlarnaStartSession($oPayment, $oUser, $oBasket)
+    {
+        $oConfig = $this->_oFcpoHelper->fcpoGetConfig();
+        $oSession = $this->_oFcpoHelper->fcpoGetSession();
+
+        $this->addParameter('clearingtype', 'fnc');
+        $this->addParameter('financingtype', $oPayment->fcpoGetFinancingType());
+
+
+        $this->addParameter('request', 'genericpayment');
+        $this->addParameter('mode', $this->getOperationMode());
+        $this->addParameter('aid', $oConfig->getConfigParam('sFCPOSubAccountID'));
+
+        $this->addParameter('add_paydata[action]', 'start_session');
+
+        $this->_fcpoAddPreOrderUserData($oUser);
+
+        $oPrice = $oBasket->getPrice();
+        $iAmount = number_format($oPrice->getBruttoPrice(), 2, '.', '') * 100;
+        $this->addParameter('amount', $iAmount);
+
+    }
+
+    /**
+     * Adding user data in state where currently no order has been
+     * placed
+     *
+     * @param $oUser
+     * @return void
+     */
+    protected function _fcpoAddPreOrderUserData($oUser)
+    {
+        $this->addAddressParamsByUser($oUser);
+        $oDelAddr = $this->getDelAddress();
+        $this->addDeliveryAddressParamsByAddress($oDelAddr);
+
+        $blHasBirthday = (
+            $oUser->oxuser__oxbirthdate != '0000-00-00' &&
+            $oUser->oxuser__oxbirthdate != ''
+        );
+
+        if ($blHasBirthday) {
+            $sBirthday = str_ireplace('-', '', $oUser->oxuser__oxbirthdate->value);
+            $this->addParameter('birthday', $sBirthday);
+        }
+
+        $this->_fcpoAddSessionBasket();
+        $this->_setPaymentParamsKlarna();
+    }
+
+    /**
      * Send request to PAYONE Server-API with request-type "genericpayment"
      * 
      * @return array
@@ -1996,7 +2068,31 @@ class fcpoRequest extends oxSuperCfg
         }
     }
 
-    protected function _getShortState($sStateId) 
+    /**
+     * Add address shippiong parameters by delivery address object
+     *
+     * @param object $oDelAddr delivery address object
+     *
+     * @return null
+     */
+    protected function addDeliveryAddressParamsByAddress($oDelAddr)
+    {
+        $oCountry = oxNew('oxcountry');
+        $oCountry->load($oDelAddr->oxaddress__oxcountryid->value);
+
+        $this->addParameter('shipping_firstname', $oDelAddr->oxaddress__oxfname->value);
+        $this->addParameter('shipping_lastname', $oDelAddr->oxaddress__oxlname->value);
+
+        if ($oDelAddr->oxaddress__oxcompany->value != '') {
+            $this->addParameter('shipping_company', $oDelAddr->oxaddress__oxcompany->value);
+        }
+        $this->addParameter('shipping_street', trim($oDelAddr->oxaddress__oxstreet->value . ' ' . $oDelAddr->oxaddress__oxstreetnr->value));
+        $this->addParameter('shipping_zip', $oDelAddr->oxaddress__oxzip->value);
+        $this->addParameter('shipping_city', $oDelAddr->oxaddress__oxcity->value);
+        $this->addParameter('shipping_country', $oCountry->oxcountry__oxisoalpha2->value);
+    }
+
+    protected function _getShortState($sStateId)
     {
         if ($this->_oFcpoHelper->fcpoGetIntShopVersion() >= 4800) {
             $oDb = oxDb::getDb();
@@ -2842,6 +2938,22 @@ class fcpoRequest extends oxSuperCfg
         $this->_oFcpoHelper->fcpoSetSessionVariable('fcpoRefNr', $sRefNr);
 
         return $sRefNrComplete;
+    }
+
+    /**
+     * Returns current delivery address object
+     *
+     * @return mixed
+     */
+    protected function getDelAddress()
+    {
+        if ($this->_oDelAddress === null) {
+          $this->_oDelAddress = false;
+          $oOrder = oxNew('oxorder');
+          $this->_oDelAddress = $oOrder->getDelAddressInfo();
+        }
+
+        return $this->_oDelAddress;
     }
 
 }

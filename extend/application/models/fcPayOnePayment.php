@@ -49,7 +49,8 @@ class fcPayOnePayment extends fcPayOnePayment_parent
         'fcpoonlineueberweisung',
         'fcpopaypal',
         'fcpopaypal_express',
-        'fcpoklarna',
+        'fcpoklarna_invoice',
+        'fcpoklarna_installment',
         'fcpobarzahlen',
         'fcpopaydirekt',
         'fcpopo_bill',
@@ -57,7 +58,7 @@ class fcPayOnePayment extends fcPayOnePayment_parent
         'fcpopo_installment',
         'fcporp_bill',
         'fcpoamazonpay',
-        'fcpo_secinvoice'
+        'fcpo_secinvoice',
     );
     
     protected static $_aRedirectPayments = array(
@@ -78,6 +79,15 @@ class fcPayOnePayment extends fcPayOnePayment_parent
         'fcpopo_bill',
         'fcpopo_debitnote',
         'fcporp_bill',
+    );
+
+    /**
+     * Paymentids for financing type
+     * @var array
+     */
+    protected $_aFinancingPayments = array(
+        'fcpoklarna_invoice'=>'KLV',
+        'fcpoklarna_installment'=>'KLS',
     );
 
     /**
@@ -374,6 +384,24 @@ class fcPayOnePayment extends fcPayOnePayment_parent
         }
 
         return $mReturn;
+    }
+
+    /**
+     * Method for fetching a matching financing type for current payment
+     * if determinable by it
+     *
+     * @param void
+     * @return string
+     */
+    public function fcpoGetFinancingType()
+    {
+        $sPaymentId = $this->getId();
+        $blIsFinancingPayment =
+            in_array($sPaymentId, array_keys($this->_aFinancingPayments));
+
+        if (!$blIsFinancingPayment) return '';
+
+        return $this->_aFinancingPayments[$sPaymentId];
     }
 
     /**
